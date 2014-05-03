@@ -1,0 +1,102 @@
+<body>
+	<pre>var AudioContext = AudioContext || webkitAudioContext;
+
+var context = new AudioContext();
+
+var analyser = context.createAnalyser();
+analyser.fftSize = 256;
+analyser.smoothingTimeConstant = .75;
+var frequencyData = new Uint8Array( analyser.fftSize );
+
+//analyser.connect( context.destination );
+
+var canvas = document.createElement( 'canvas' ),
+	ctx = canvas.getContext( '2d' );
+canvas.width = 1024;
+canvas.height = 256;
+canvas.style.border = '1px solid #666'
+document.body.appendChild( canvas );
+
+var mediaStreamSource;
+
+navigator.getUserMedia = ( navigator.getUserMedia
+                           || navigator.webkitGetUserMedia 
+                           || navigator.mozGetUserMedia 
+                           || navigator.msGetUserMedia );
+navigator.getUserMedia(
+	{ audio: true }, 
+	function( stream ) {
+		mediaStreamSource = context.createMediaStreamSource( stream );
+		mediaStreamSource.connect( analyser );
+	}, 
+	function( e ) {
+		console.log( 'getUserMedia ' + e )
+	} 
+);
+
+function update() {
+
+	requestAnimationFrame( update );
+	analyser.getByteFrequencyData( frequencyData );
+
+	ctx.clearRect( 0, 0, canvas.width, canvas.height );
+	for( var j = 0, m = analyser.frequencyBinCount; j < m; j++ ) {
+		ctx.fillRect( j * ( canvas.width / m ), canvas.height, .5 * canvas.width / m, - frequencyData[ j ] * canvas.height / 255 );
+	}
+
+}
+
+update();</pre>
+</body>
+<script>
+var AudioContext = AudioContext || webkitAudioContext;
+
+var context = new AudioContext();
+
+var analyser = context.createAnalyser();
+analyser.fftSize = 256;
+analyser.smoothingTimeConstant = .75;
+var frequencyData = new Uint8Array( analyser.fftSize );
+
+//analyser.connect( context.destination );
+
+var canvas = document.createElement( 'canvas' ),
+	ctx = canvas.getContext( '2d' );
+canvas.width = 1024;
+canvas.height = 256;
+canvas.style.border = '1px solid #666'
+document.body.appendChild( canvas );
+
+var mediaStreamSource;
+
+navigator.getUserMedia = ( navigator.getUserMedia
+                           || navigator.webkitGetUserMedia 
+                           || navigator.mozGetUserMedia 
+                           || navigator.msGetUserMedia );
+navigator.getUserMedia(
+	{ audio: true }, 
+	function( stream ) {
+		mediaStreamSource = context.createMediaStreamSource( stream );
+		mediaStreamSource.connect( analyser );
+	}, 
+	function( e ) {
+		console.log( 'getUserMedia ' + e )
+	}
+);
+
+function update() {
+
+	requestAnimationFrame( update );
+	analyser.getByteFrequencyData( frequencyData );
+
+	ctx.clearRect( 0, 0, canvas.width, canvas.height );
+	for( var j = 0, m = analyser.frequencyBinCount; j < m; j++ ) {
+		ctx.fillRect( j * ( canvas.width / m ), canvas.height, .5 * canvas.width / m, - frequencyData[ j ] * canvas.height / 255 );
+	}
+
+}
+
+update();
+
+
+</script>

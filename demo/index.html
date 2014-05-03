@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>Future JS Barcelona 2014 - Web Audio Universe</title>
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			*{
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				color: #ffffff;
+				font-family: 'roboto condensed', tahoma;
+				font-size: 13px;
+				text-align: left;
+				font-weight: 100;
+				background-color: #111;
+				margin: 0px;
+				overflow: hidden;
+			}
+			a{ color: #aaa; text-decoration: none;}
+			#warning{ color: red; position: absolute; right: 10px; top: 10px; text-align: right;}
+			h1{ font-size: 1.4em;}
+			#container{ position: absolute; left: 0; top: 0; right: 0; bottom: 0 ;}
+			#title{ position: absolute; left: 10px; top: 10px;}
+		</style>
+		<link href='http://fonts.googleapis.com/css?family=Roboto+Condensed:400,700,300' rel='stylesheet' type='text/css'>
+		<script src="js/three.min.js" ></script>
+		<script src="js/ImprovedNoise.js" ></script>
+		<script src="js/Wagner.js"></script>
+		<script src="js/Wagner.base.js"></script>
+	<body>
+
+	<div id="container" ></div>
+
+	<div id="title">
+		<h1>Everybody dance now with Web Audio API // Future JS Barcelona 2014</h1>
+		<p>Click to move forward, click and drag to steer. The cubes will capture the camera when close. Type <b>x</b> to get free.</p>
+		<br/>
+		<p>You can check <a href="http://slides.com/jaumesanchez/barcelona-future-js-2014/" >the slides on slides.com</a> and <a href="https://github.com/spite/futurejs-2014" >the code on GitHub</a>.</p>
+		<p>Jaume Sanchez <a href="http://www.twitter.com/thespite">@thespite</a> // <a href="http://www.clicktorelease.com">clicktorelease.com</a></p>
+		<br/>
+	</div>
+
+	<div id="warning">
+		<p>Running too slow (probably on Windows/ANGLE)?<br/><a href="index.html#nopost">Try the link without postprocessing</a></p>
+	</div>
+
+<script>
+
+'use strict';
+
+WAGNER.vertexShadersPath = 'vertex-shaders';
+WAGNER.fragmentShadersPath = 'fragment-shaders';
+WAGNER.assetsPath = 'assets';
+
+var noise = new ImprovedNoise();
+
+var ui = [].slice.call( document.querySelectorAll( '.ui' ) );
+
+var container = document.getElementById( 'container' );
+//var loading = document.getElementById( 'loading' );
+
+window.addEventListener( 'load', init );
+
+var material;
+var renderer, scene, camera, fov = 70, nFov = fov, distance = 100, nDistance = distance;
+var displacement = 0, nDisplacement = displacement;
+var composer, bloomPass, vignettePass, fxaaPass, dirtPass, blurPass;
+
+var isUserInteracting = false, isUserPinching = false;
+var onPointerDownPointerX, onPointerDownPointerY, onPointerDownLon, onPointerDownLat;
+var lon = -90, lat = 0, nLon = lon, nLat = lat;
+var oDist, oFov;
+var cubes = [];
+
+var position = new THREE.Vector3( 0, 0, 100 ),
+	target = new THREE.Vector3(),
+	direction = new THREE.Vector3(),
+	speed = new THREE.Vector3(),
+	
+	steerDirection = new THREE.Vector3(),
+	steerSpeed = new THREE.Vector3( 0, 0, 0 ),
+	orientedSteerSpeed = new THREE.Vector3(),
+	steerTarget = new THREE.Vector3(),
+
+	orbitSpeed = new THREE.Vector3(),
+	orientedOrbitSpeed = new THREE.Vector3(),
+	orbitTarget = new THREE.Vector3(),
+	orbitDirection = new THREE.Vector3(),
+	orbitTangent = new THREE.Vector3(),
+
+	directionMatrix = new THREE.Matrix4(),
+	directionUp = new THREE.Vector3( 0, 1, 0 );
+
+var AudioContext = AudioContext || webkitAudioContext;
+navigator.getUserMedia = ( navigator.getUserMedia
+                           || navigator.webkitGetUserMedia 
+                           || navigator.mozGetUserMedia 
+                           || navigator.msGetUserMedia );
+
+var context = new AudioContext();
+
+function Preloader() {
+
+	this.sounds = {};
+	this.loaded = 0;
+	this.toLoad = 0;
+	this.queue = [];
+
+}
+
+Preloader.prototype.addSound = function( id, filename ) {
+
+	this.sounds[ id ] = {
+		filename: filename,
+		bufferData: null,
+		loaded: false,
+		type: 'sound'
+	};
+
+	this.addToQueue( this.sounds[ id ] );
+
+}
+
+Preloader.prototype.addToQueue = function( task ) {
+
+	this.queue.push( task );
+	this.toLoad++;
+
+}
+
+Preloader.prototype.loadSound = function( asset ) {
+
+	var request = new XMLHttpRequest();
+    request.open( 'GET', asset.filename, true );
+    request.responseType = 'arraybuffer';
+ 
+    request.onload = function() {
+		context.decodeAudioData(request.response, function(buffer) {
+			asset.bufferData = buffer;
+			asset.loaded = true;
+			this.onAssetLoaded();
+    	}.bind( this ) , function() {
+    		console.log( 'error' );
+    	});
+    }.bind( this );
+ 
+    request.send();
+
+}
+
+Preloader.prototype.processQueue = function() {
+
+	var a = this.queue.pop();
+	this.loadSound( a );
+
+}
+
+Preloader.prototype.onAssetLoaded = function() {
+
+	this.loaded++;
+	if( this.loaded == this.toLoad ) {
+		this.onComplete();
+		return;
+	}
+
+	this.processQueue();
+
+}
+
+Preloader.prototype.onComplete = function() {
+
+	if( this.onCompleteCallback ) this.onCompleteCallback();
+
+}
+
+Preloader.prototype.load = function( callback ) {
+	
+	this.onCompleteCallback = callback;
+	this.processQueue();
+
+}
+
+Preloader.prototype.getSound = function( id ) {
+
+	return this.sounds[ id ];
+
+}
+
+var preloader, sphere;
+
+function init() {
+
+	scene = new THREE.Scene();
+
+	var width = window.innerWidth,
+		height = window.innerHeight;
+
+	camera = new THREE.PerspectiveCamera( fov, width / height, 1, 200 );
+	camera.target = new THREE.Vector3( 0, 0, 0 );
+	scene.add( camera );
+
+	renderer = new THREE.WebGLRenderer( { antialias: true, alpha: false } );
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	renderer.sortObjects = true;
+
+	container.appendChild( renderer.domElement );
+
+	composer = new WAGNER.Composer( renderer, { useRGBA: false } );
+	bloomPass = new WAGNER.MultiPassBloomPass();
+	bloomPass.params.strength = 1;
+	bloomPass.params.applyZoomBlur = true;
+	bloomPass.params.zoomBlurStrength = 1;
+	bloomPass.params.useTexture = false;
+	vignettePass = new WAGNER.Vignette2Pass();
+	vignettePass.params.boost = 1.4;
+	vignettePass.params.reduction = 2.8;
+	fxaaPass = new WAGNER.FXAAPass();
+	dirtPass = new WAGNER.DirtPass();
+	blurPass = new WAGNER.GuidedFullBoxBlurPass();
+
+	window.addEventListener( 'resize', onResize );
+
+	container.addEventListener( 'mousedown', onContainerMouseDown, false );
+	container.addEventListener( 'mousemove', onContainerMouseMove, false );
+	container.addEventListener( 'mouseup', onContainerMouseUp, false );
+	
+	container.addEventListener( 'touchstart', onTouchStart, false );
+	container.addEventListener( 'touchmove', onTouchMove, false );
+	container.addEventListener( 'touchend', onTouchEnd, false );
+	container.addEventListener( 'touchcancel', onTouchEnd, false );
+	
+	container.addEventListener( 'mousewheel', onContainerMouseWheel, false );
+	container.addEventListener( 'DOMMouseScroll', onContainerMouseWheel, false); 
+
+	preloader = new Preloader();
+	preloader.addSound( 'camera', 'assets/sound/spacecraft.wav' );
+	preloader.addSound( 'impulse', 'assets/sound/irHall.ogg' );
+	preloader.addSound( 'atmosphere', 'assets/sound/atmosphere.wav' );
+	preloader.addSound( 'main_loop', 'assets/sound/47127__gyzhor__lightsaber5.mp3' );
+	preloader.addSound( 'on', 'assets/sound/button-0.mp3' );
+	preloader.addSound( 'off', 'assets/sound/button-1.mp3' );
+	preloader.addSound( 'on_loop', 'assets/sound/ambient.wav' );
+	preloader.addSound( 'proximity', 'assets/sound/going_outside.mp3' );
+	preloader.addSound( 'detect', 'assets/sound/202612__luiiiiiiii__neon-light-flicker.wav' );
+	preloader.load( createScene );
+
+	sphere = new THREE.Mesh( 
+		new THREE.IcosahedronGeometry( 500, 3 ), 
+		new THREE.MeshBasicMaterial( { color: 0x202020, side: THREE.BackSide, shading: THREE.FlatShading } )
+	);
+	scene.add( sphere );
+
+	onResize();
+
+}
+
+var mainVolume;
+var cameraSound;
+var mediaStreamSource = null;
+var usePostprocessing = window.location.hash.indexOf( 'nopost' ) == -1;
+
+function createSoundNode( id ) {
+
+	var source = context.createBufferSource(); 
+	source.buffer = preloader.getSound( id ).bufferData;
+
+	var volume = context.createGain();
+	volume.gain.value = 1;
+
+	source.connect( volume );
+
+	return {
+		source: source,
+		volume: volume
+	}
+
+}
+
+var mainFilter;
+
+function createScene() {
+
+	navigator.getUserMedia(
+		{ audio: true }, 
+		function( stream ) {
+			mediaStreamSource = context.createMediaStreamSource( stream );
+		}, 
+		function( e ) { 
+			console.log( 'getUserMedia ' + e )
+		} 
+	);
+
+	cameraSound = createSoundNode( 'camera' );
+	cameraSound.source.loop = true;
+	cameraSound.source.start();
+
+	var mainConvolver = context.createConvolver();
+	mainConvolver.buffer = preloader.getSound( 'impulse' ).bufferData;
+
+	mainFilter = context.createBiquadFilter();
+	mainFilter.type = 0;
+	mainFilter.frequency.value = 440;
+
+	mainVolume = context.createGain();
+	mainVolume.gain.value = 20;
+
+	var mainDynamicsCompressor = context.createDynamicsCompressor();
+
+	var useConvolver = true;
+	if( useConvolver ) {
+		cameraSound.volume.connect( mainConvolver );
+		mainVolume.connect( mainConvolver );
+		mainConvolver.connect( mainDynamicsCompressor );
+		//mainFilter.connect( mainDynamicsCompressor );
+		mainDynamicsCompressor.connect( context.destination );
+	} else {
+		cameraSound.volume.connect( mainVolume );
+		mainVolume.connect( context.destination );
+	}
+
+	var ambientSound = createSoundNode( 'atmosphere' );
+	ambientSound.source.loop = true;
+	ambientSound.source.start();
+	ambientSound.volume.gain.value = .1;
+	ambientSound.volume.connect( mainVolume );
+
+	var cubeGeometry = new THREE.BoxGeometry( 1, 1, 1, 10, 10, 10 ),
+		center = new THREE.Vector3( .5, .5, .5 );
+
+	/*for( var j = 0; j < cubeGeometry.vertices.length; j++ ) {
+		var v = cubeGeometry.vertices[ j ];
+		v.normalize();
+	}*/
+
+	for (var j = 0; j < 50; j++ ) {
+
+		var cubeMaterial = new THREE.MeshBasicMaterial( { color: 0xb70000, map: THREE.ImageUtils.loadTexture( 'assets/textures/texture.png') });
+		var mesh = new THREE.Mesh( cubeGeometry, cubeMaterial );
+		mesh.position.set( 
+			( .5 - Math.random() ),
+			( .5 - Math.random() ),
+			( .5 - Math.random() )
+		);
+		mesh.position.multiplyScalar( 100 );
+		mesh.scale.x = mesh.scale.y = mesh.scale.z = 1 + Math.random() * 5;
+		mesh.rotation.set( 0, Math.random() * 2 * Math.PI, 0 );
+		scene.add( mesh );
+
+		mesh.disabled = false;
+
+		var pitch = 1 / ( .5 * mesh.scale.x );
+
+		cubes.push( mesh );
+		
+		mesh.loopSound = createSoundNode( 'main_loop' );
+		mesh.loopSound.source.loop = true;
+		mesh.loopSound.source.playbackRate.value = pitch;
+		mesh.loopSound.source.start();
+		mesh.loopSound.volume.gain.value = 80;
+
+		mesh.delayNode = context.createDelay();
+		mesh.delayNode.delayTime.value = Math.random() * 1;
+
+		mesh.detectSound = createSoundNode( 'detect' );
+		mesh.detectSound.source.playbackRate.value = pitch;
+		mesh.detectSound.volume.gain.value = 40;
+		
+		mesh.activateSound = createSoundNode( 'on' );
+		mesh.activateSound.source.playbackRate.value = pitch;
+		mesh.activateSound.volume.gain.value = 40;
+	
+		mesh.deactivateSound = createSoundNode( 'off' );
+		mesh.deactivateSound.source.playbackRate.value = mesh.activateSound.source.playbackRate.value;
+		mesh.deactivateSound.volume.gain.value = 40;
+
+		mesh.proximitySound = createSoundNode( 'proximity' ); 
+		mesh.proximitySound.source.loop = true;
+		mesh.proximitySound.source.playbackRate.value = pitch;
+		mesh.proximitySound.volume.gain.value = 20;
+
+		mesh.analyzer = context.createAnalyser();
+		mesh.analyzer.fftSize = 32;
+		mesh.frequencyData = new Uint8Array( mesh.analyzer.fftSize );
+
+		mesh.panner = context.createPanner();
+		mesh.panner.refDistance = 1;
+		mesh.panner.setPosition( mesh.position.x, mesh.position.y, mesh.position.z );
+		
+		mesh.loopSound.source.connect( mesh.delayNode );
+		mesh.delayNode.connect( mesh.analyzer );
+		mesh.activateSound.source.connect( mesh.analyzer );
+		mesh.deactivateSound.source.connect( mesh.analyzer );
+		mesh.proximitySound.source.connect( mesh.analyzer );
+
+		mesh.analyzer.connect( mesh.panner );
+
+		mesh.panner.connect( mainVolume );
+
+	}
+
+	var geometry = new THREE.Geometry();
+	for( var j = 0; j < 30; j++ ) {
+		var v = new THREE.Vector3(
+			.5 - Math.random(),
+			.5 - Math.random(),
+			.5 - Math.random()
+		);
+		v.multiplyScalar( 100 );
+		geometry.vertices.push( v );
+	}
+
+	render();
+
+}
+
+function onResize() {
+
+	var w = container.clientWidth,
+		h = container.clientHeight;
+
+	renderer.setSize( w, h );
+
+	camera.aspect = w / h;
+	camera.updateProjectionMatrix();
+
+	composer.setSize( w, h );
+	bloomPass.params.zoomBlurCenter.set( .5 * composer.width, .5 * composer.height );
+
+}
+
+function onContainerMouseDown( event ) {
+	
+	event.preventDefault();
+
+	startInteraction();
+	isUserInteracting = true;
+	var el = document.querySelectorAll( '.hide' );
+	for( var j = 0; j < el.length; j++ ) {
+		el[ j ].style.opacity = 0;
+		el[ j ].style.pointerEvents = 'none';
+	}
+	
+	onPointerDownPointerX = event.clientX;
+	onPointerDownPointerY = event.clientY;
+
+	onPointerDownLon = lon;
+	onPointerDownLat = lat;
+
+	steerSpeed.set( 0, 0, -.25 );
+	
+}
+
+function onContainerMouseMove( event ) {
+
+	event.preventDefault();
+	
+	var lookSpeed = .15;
+	var f = fov / 500;
+	if( navigator.pointer && navigator.pointer.isLocked ) {
+		nLon = event.webkitMovementX * f;
+		nLat = event.webkitMovementY * f;
+	} else if ( document.mozPointerLockElement == container ){
+		if( Math.abs( event.mozMovementX ) < 100 || Math.abs( event.mozMovementY ) < 100 ) { 
+			nLon -= event.mozMovementX * f;
+			nLat -= event.mozMovementY * f;
+		}
+	} else {
+		if ( isUserInteracting ) {
+			var dx = ( onPointerDownPointerX - event.clientX ) * f;
+			var dy = ( onPointerDownPointerY - event.clientY ) * f;
+			nLon = dx + onPointerDownLon;
+			nLat = dy + onPointerDownLat;
+		}
+	}
+}
+
+function onContainerMouseUp( event ) {
+
+	event.preventDefault();
+	endInteraction();
+	isUserInteracting = false;
+	var el = document.querySelectorAll( '.hide' );
+	for( var j = 0; j < el.length; j++ ) {
+		el[ j ].style.opacity = 1;
+		el[ j ].style.pointerEvents = 'auto';
+	}
+
+}
+
+function onContainerMouseWheel( event ) {
+	
+	event = event ? event : window.event;
+	//nFov = fov - ( event.detail ? event.detail * -5 : event.wheelDelta / 8 );
+	nDistance = nDistance - ( event.detail ? event.detail * -5 : event.wheelDelta / 8 );
+
+}
+
+function onTouchStart( event ) {
+
+	startInteraction();
+	isUserInteracting = true;
+	var el = document.querySelectorAll( '.hide' );
+	for( var j = 0; j < el.length; j++ ) {
+		el[ j ].style.opacity = 0;
+		el[ j ].style.pointerEvents = 'none';
+	}
+
+	if( event.touches.length == 2 ) {
+
+		var t = event.touches;
+		oDist = Math.sqrt(
+				Math.pow( t[ 0 ].clientX - t[ 1 ].clientX, 2 ) +
+				Math.pow( t[ 0 ].clientY - t[ 1 ].clientY, 2 ) );
+		oFov = nFov;
+		
+		isUserPinching = true;
+
+	} else {
+
+	  var t = event.touches[ 0 ];
+	
+	  onPointerDownPointerX = t.clientX;
+	  onPointerDownPointerY = t.clientY;
+
+	  onPointerDownLon = lon;
+	  onPointerDownLat = lat;
+
+	}
+
+  event.preventDefault();
+    
+}
+
+function onTouchMove( event ) {
+
+	if( event.touches.length == 2 ) {
+
+		var t = event.touches;
+		var dist = Math.sqrt(
+		Math.pow( t[ 0 ].clientX - t[ 1 ].clientX, 2 ) +
+		Math.pow( t[ 0 ].clientY - t[ 1 ].clientY, 2 ) );
+
+		nFov = oFov + .1 * ( oDist - dist );
+
+	} else {
+
+	  var t = event.touches[ 0 ];
+	  nLon = .1 * ( t.clientX - onPointerDownPointerX ) + onPointerDownLon;
+	  nLat = .1 * ( t.clientY - onPointerDownPointerY ) + onPointerDownLat;
+
+	 }
+
+  event.preventDefault();
+
+}
+
+function onTouchEnd( event ) {
+
+	endInteraction();
+	event.preventDefault();
+	isUserInteracting = false;
+	var el = document.querySelectorAll( '.hide' );
+	for( var j = 0; j < el.length; j++ ) {
+		el[ j ].style.opacity = 1;
+		el[ j ].style.pointerEvents = 'auto';
+	}
+
+}
+
+function startInteraction() {
+	ui.forEach( function( e ) { e.classList.add( 'hidden' ) } );
+}
+
+function endInteraction() {
+	ui.forEach( function( e ) { e.classList.remove( 'hidden' ) } );
+}
+
+function updateSteer() {
+
+	lat = nLat;
+	lon = nLon;
+
+	lat = Math.max( - 85, Math.min( 85, lat ) );
+
+	var phi = ( 90 - lat ) * Math.PI / 180;
+	var theta = lon * Math.PI / 180;
+
+	steerDirection.set( 
+		Math.sin( phi ) * Math.cos( theta ),
+		Math.cos( phi ),
+		Math.sin( phi ) * Math.sin( theta )
+	);
+	steerDirection.normalize();
+	steerDirection.y *= -1;
+
+	orientedSteerSpeed.copy( steerSpeed );
+	directionMatrix.identity();
+	directionMatrix.lookAt( new THREE.Vector3( 0, 0, 0 ), steerDirection, directionUp );
+	orientedSteerSpeed.applyMatrix4( directionMatrix );
+
+	steerTarget.copy( steerDirection );
+}
+
+function updateOrbit() {
+
+	orientedOrbitSpeed.set( 0, 0, 0 );
+	orbitTarget.set( 0, 0, 0 );
+	orbitDirection.set( 0, 0, 0 );
+
+	if( !isOrbiting ) return;
+
+	orbitSpeed.multiplyScalar( .99 );
+
+	var dir = new THREE.Vector3();
+	var tangent = new THREE.Vector3();
+
+	dir.copy( orbitingPosition );
+	dir.sub( camera.position );
+	var dx = dir.x;
+	var dy = dir.y;
+	dir.normalize();
+
+	orbitDirection.add( dir );
+
+	tangent = dir.cross( directionUp );
+	if( tangent.dot( speed ) < 0 ) {
+		tangent.negate();
+	}
+
+	orientedOrbitSpeed.copy( orbitSpeed );
+	directionMatrix.identity();
+	directionMatrix.lookAt( new THREE.Vector3( 0, 0, 0 ), dir, directionUp );
+	orientedOrbitSpeed.applyMatrix4( directionMatrix );
+
+	orientedOrbitSpeed.y += dy * .1;
+
+	orbitDirection.copy( tangent );
+
+	orbitTarget.copy( orbitingPosition );
+	orbitTarget.sub( camera.position );
+	orbitTarget.normalize();
+
+}
+
+function vectorToAngles( v ) {
+	
+	var r = v.length();
+	if( r == 0 ) r = 1;
+	var theta = -1*((90 + (Math.atan2(v.x, v.z)) * 180 / Math.PI) % 360) -180;
+	var phi = 90 - (Math.acos(v.y / r)) * 180 / Math.PI;
+
+	return { phi: phi, theta: theta };
+
+}
+
+function interpolateVectors( vectors ) {
+
+	var phi = 0, theta = 0;
+	for( var j = 0; j < vectors.length; j++ ) {
+
+		var angles = vectorToAngles( vectors[ j ].normalize() );
+		phi += angles.phi;
+		theta += angles.theta;
+
+	}
+
+	phi /= vectors.length;
+	theta /= vectors.length;
+
+	var res = new THREE.Vector3();
+	res.set( 
+		Math.sin( phi ) * Math.cos( theta ),
+		Math.sin( phi ) * Math.sin( theta ),
+		Math.cos( phi )
+	);
+	res.normalize();
+
+	return res;
+
+}
+
+window.addEventListener( 'keydown', function( e ) {
+
+	if( e.keyCode == 88 ) {
+
+		if( orbitingElement !== null ) {
+			cubes[ orbitingElement ].deactivateSound.source.start();
+			cubes[ orbitingElement ].proximitySound.source.stop();
+			cubes[ orbitingElement ].material.color.setRGB( .25, .25, .25 );
+			//cubes.splice( orbitingElement, 1 );
+			cubes[ orbitingElement ].disabled = true;
+			isOrbiting = false;
+			orbitingElement = null;
+			
+			tmpVector.copy( camera.position );
+			tmpVector.sub( camera.target );
+			tmpVector.normalize();
+			var v = vectorToAngles( lookAtDirection );
+			console.log( v, lookAtDirection );
+			nLat = v.phi;
+			nLon = v.theta;
+			steerSpeed.set( 0, 0, 0 );
+
+		}
+	}
+
+} );
+
+var isOrbiting = false,
+	orbitStartTime,
+	orbitingElement = null,
+	orbitingPosition = new THREE.Vector3();
+
+var oldPosition = new THREE.Vector3( 0, 0, 0 ),
+	lookAtDirection = new THREE.Vector3(),
+	oldLookAtDirection = new THREE.Vector3(),
+	tmpVector = new THREE.Vector3();
+
+var roll = 0;
+
+function easeVector( current, to, ease ) {
+
+	tmpVector.copy( to );
+	current.add( tmpVector.sub( current ).multiplyScalar( ease ) );
+
+}
+
+function easeValue( current, to, ease ) {
+
+	return current + ( to - current ) * ease;
+
+}
+
+function mix( a, b, c ) {
+
+	return a * ( 1 - c ) + b * c;
+
+}
+
+function render() {
+
+	requestAnimationFrame( render );
+
+	var time = Date.now();
+
+	if( !isOrbiting ) {
+
+		var mind = 1000000000;
+		var closest = null;
+		var c = new THREE.Vector3();
+
+		for( var j = 0; j < cubes.length; j++ ) {
+			var d = position.distanceTo( cubes[ j ].position );
+			var f = 1 - Math.min( 1, d / 100 );
+			if( !cubes[ j ].disabled ) {
+				cubes[ j ].material.color.setRGB( mix( .2, 247 / 255, f ), f * 162 / 255, f * 110 / 255 );
+			}
+			if( !cubes[ j ].disabled && d < mind ) {
+				mind = d;
+				closest = j;
+			}
+		}
+
+		if( mind < 10 ) {
+
+			cubes[ closest ].activateSound.source.start();
+			cubes[ closest ].proximitySound.source.start();
+			console.log( mind );
+			orbitStartTime = Date.now();
+			orbitSpeed.copy( steerSpeed );
+			isOrbiting = true;
+			orbitingPosition = cubes[ closest ].position;
+			orbitingElement = closest;
+		}
+
+	}
+
+	if( orbitingElement ) {
+		if( mediaStreamSource ) mediaStreamSource.connect( cubes[ orbitingElement ].analyzer );
+		cubes[ orbitingElement ].analyzer.getByteFrequencyData( cubes[ orbitingElement ].frequencyData );
+		var f = 1.8 * cubes[ orbitingElement ].frequencyData[ 4 ] / 255;
+		cubes[ orbitingElement ].material.color.setRGB( f, f, f );
+		cubes[ orbitingElement ].rotation.x += .01 * f;
+	}
+
+	updateSteer();
+	updateOrbit();
+
+	speed.set( 0, 0, 0 );
+	if( isOrbiting ) speed.add( orientedOrbitSpeed );
+	else speed.add( orientedSteerSpeed );
+
+	position.add( speed );
+	
+	//nFov = speed.length();
+	fov += ( nFov - fov ) * .1;
+	camera.fov = 40 + fov * 50;
+	camera.updateProjectionMatrix();
+	
+	lookAtDirection.set( 0, 0, 0 );
+	if( isOrbiting ) lookAtDirection.add( orbitTarget );
+	else lookAtDirection.add( steerTarget );
+	lookAtDirection.normalize();
+
+	target.copy( position );
+	target.add( lookAtDirection );
+
+	easeVector( camera.position, position, .05 );
+	easeVector( camera.target, target, .05 );
+
+	camera.lookAt( camera.target );
+
+ 	tmpVector.copy( camera.position );
+ 	tmpVector.sub( oldPosition );
+
+ 	directionMatrix.identity();
+	directionMatrix.lookAt( new THREE.Vector3( 0, 0, 0 ), tmpVector, directionUp );
+	tmpVector.applyMatrix4( directionMatrix );
+	roll = easeValue( roll, 1 * tmpVector.x, .05 );
+ 	camera.rotateZ( roll );
+
+ 	oldPosition.copy( camera.position );
+ 	oldLookAtDirection.copy( lookAtDirection );
+
+	camera.position.x += .005 * noise.noise( .00050 * time, .1, .2 );
+	camera.position.y += .005 * noise.noise( .00045 * time, .1, .2 );
+	camera.position.z += .005 * noise.noise( .00055 * time, .1, .2 );
+
+	sphere.position.copy( camera.position );
+
+	cameraSound.source.playbackRate.value = Math.max( 0.1, .5 * speed.length() );
+	cameraSound.volume.gain.value = .5 * Math.max( 0.1, speed.length() );
+
+	context.listener.setPosition( camera.position.x, camera.position.y, camera.position.z );
+	context.listener.setOrientation( speed.x, speed.y, speed.z, directionUp.x, directionUp.y, directionUp.z);
+	context.listener.setVelocity( speed.x, speed.y, speed.z );
+
+	if( !usePostprocessing ) {
+
+		renderer.render( scene, camera );
+
+	} else {
+
+	    renderer.autoClearColor = true;
+		
+		composer.reset();
+		
+		composer.render( scene, camera );
+
+		/*blurPass.params.invertBiasMap = 0;
+		blurPass.params.amount = 20;
+		blurPass.params.tBias = depthTexture;
+		blurPass.params.from = 1;
+		blurPass.params.to = .5;
+		composer.pass( blurPass );*/
+
+		composer.pass( bloomPass );
+		composer.pass( vignettePass );
+		composer.pass( dirtPass );
+		composer.pass( fxaaPass );
+
+
+		composer.toScreen();
+
+	}
+
+}
+
+</script>
+		
+	</body>
+</html>

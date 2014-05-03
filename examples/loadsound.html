@@ -1,0 +1,67 @@
+<pre>var AudioContext = AudioContext || webkitAudioContext;
+
+var context = new AudioContext();
+
+function loadSound() {
+
+	var request = new XMLHttpRequest();
+	request.open( 'GET', 'sound.mp3', true );
+	request.responseType = 'arraybuffer';
+
+	request.onload = function() {
+
+		context.decodeAudioData( request.response, function( buffer ) {
+			
+			var source = context.createBufferSource(); 
+			source.buffer = buffer;
+			source.playbackRate.value = .8 + Math.random() * .4;
+
+			source.connect( context.destination );
+			source.start( 0 );
+
+		}, function() {
+			console.log( 'error' );
+		} );
+
+	};
+
+	request.send();
+
+}
+
+window.addEventListener( 'click', loadSound );</pre>
+<script>
+var AudioContext = AudioContext || webkitAudioContext;
+
+var context = new AudioContext();
+
+function loadSound() {
+
+	var request = new XMLHttpRequest();
+	request.open( 'GET', 'sound.mp3', true );
+	request.responseType = 'arraybuffer';
+
+	request.onload = function() {
+
+		context.decodeAudioData( request.response, function( buffer ) {
+			
+			var source = context.createBufferSource(); 
+			source.buffer = buffer;
+			source.playbackRate.value = .8 + Math.random() * .4;
+
+			source.connect( context.destination );
+			source.start( 0 );
+
+		}, function() {
+			console.log( 'error' );
+		} );
+
+	};
+
+	request.send();
+
+}
+
+window.addEventListener( 'click', loadSound );
+
+</script>

@@ -1,0 +1,83 @@
+<pre>var AudioContext = AudioContext || webkitAudioContext;
+
+var context = new AudioContext();
+var audioBuffer;
+
+function loadSound() {
+
+	var request = new XMLHttpRequest();
+	request.open( 'GET', 'sound.mp3', true );
+	request.responseType = 'arraybuffer';
+
+	request.onload = function() {
+
+		context.decodeAudioData( request.response, function( buffer ) {
+			
+			audioBuffer = buffer;
+			window.addEventListener( 'click', playSound );
+
+		}, function() {
+			console.log( 'error' );
+		} );
+
+	};
+
+	request.send();
+
+}
+
+function playSound() {
+
+	var source = context.createBufferSource(); 
+	source.buffer = audioBuffer;
+	source.playbackRate.value = .8 + Math.random() * .4;
+
+	source.connect( context.destination );
+	source.start( 0 );
+
+}
+
+loadSound();</pre>
+<script>
+var AudioContext = AudioContext || webkitAudioContext;
+
+var context = new AudioContext();
+var audioBuffer;
+
+function loadSound() {
+
+	var request = new XMLHttpRequest();
+	request.open( 'GET', 'sound.mp3', true );
+	request.responseType = 'arraybuffer';
+
+	request.onload = function() {
+
+		context.decodeAudioData( request.response, function( buffer ) {
+			
+			audioBuffer = buffer;
+			window.addEventListener( 'click', playSound );
+
+		}, function() {
+			console.log( 'error' );
+		} );
+
+	};
+
+	request.send();
+
+}
+
+function playSound() {
+
+	var source = context.createBufferSource(); 
+	source.buffer = audioBuffer;
+	source.playbackRate.value = .8 + Math.random() * .4;
+
+	source.connect( context.destination );
+	source.start( 0 );
+
+}
+
+loadSound();
+
+</script>
