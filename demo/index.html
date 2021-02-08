@@ -96,10 +96,10 @@ var position = new THREE.Vector3( 0, 0, 100 ),
 	directionUp = new THREE.Vector3( 0, 1, 0 );
 
 var AudioContext = AudioContext || webkitAudioContext;
-navigator.getUserMedia = ( navigator.getUserMedia
-                           || navigator.webkitGetUserMedia
-                           || navigator.mozGetUserMedia
-                           || navigator.msGetUserMedia );
+// navigator.getUserMedia = ( navigator.getUserMedia
+//                            || navigator.webkitGetUserMedia
+//                            || navigator.mozGetUserMedia
+//                            || navigator.msGetUserMedia );
 
 var context = new AudioContext();
 
@@ -284,15 +284,15 @@ var mainFilter;
 
 function createScene() {
 
-	navigator.getUserMedia(
-		{ audio: true },
-		function( stream ) {
-			mediaStreamSource = context.createMediaStreamSource( stream );
-		},
-		function( e ) { 
-			console.log( 'getUserMedia ' + e )
-		}
-	);
+// 	navigator.getUserMedia(
+// 		{ audio: true },
+// 		function( stream ) {
+// 			mediaStreamSource = context.createMediaStreamSource( stream );
+// 		},
+// 		function( e ) { 
+// 			console.log( 'getUserMedia ' + e )
+// 		}
+// 	);
 
 	cameraSound = createSoundNode( 'camera' );
 	cameraSound.source.loop = true;
